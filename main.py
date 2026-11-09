@@ -1,91 +1,107 @@
 import logging
-import asyncio
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# Bot va Admin sozlamalari
 BOT_TOKEN = "9207194444:AAFbuZLm_iH6Cn-oaosmsuCW8gAujDgdazI"
 ADMIN_ID = 1872175086
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
-# Tortlar katalogi
+# Tort turlari (Nomi, rasmi, narxi va tavsifi bilan)
 CAKES_MENU = {
     "red_velvet": {
         "name": "🔴 Red Velvet (Qizil Barsxat)",
         "price": "150,000 so'm",
+        "photo": "https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?w=600",
         "description": "Mayin biskvit va pishloqli (cream cheese) krem aralashmasi."
     },
     "medovik": {
         "name": "🍯 Medovik (Asalli tort)",
         "price": "120,000 so'm",
+        "photo": "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=600",
         "description": "Tabiiy asal va sariyog'li krem bilan tayyorlangan klassik tort."
     },
     "napoleon": {
         "name": "🥐 Napoleon",
         "price": "130,000 so'm",
+        "photo": "https://images.unsplash.com/photo-1535141192574-5d4897c13136?w=600",
         "description": "Qat-qat xamir va zavarnoy (pishirilgan) krem uyg'unligi."
     },
     "snickers": {
         "name": "🥜 Snickers Tort",
         "price": "160,000 so'm",
+        "photo": "https://images.unsplash.com/photo-1606890737304-57a1ca8a5b62?w=600",
         "description": "Shokoladli biskvit, arab yong'og'i va karamel bilan."
-    },
-    "tiramisu": {
-        "name": "☕ Tiramisu",
-        "price": "170,000 so'm",
-        "description": "Italiya uslubidagi maskarpone pishlog'i va kofe ta'mli desert."
-    },
-    "fruity": {
-        "name": "🍓 Mevali Tort",
-        "price": "140,000 so'm",
-        "description": "Yengil biskvit, qaymoqli krem va yangi uzilgan mevalar bilan."
     }
 }
 
-def get_menu_keyboard():
-    buttons = []
-    for cake_id, cake_info in CAKES_MENU.items():
-        buttons.append([InlineKeyboardButton(text=cake_info["name"], callback_data=f"cake_{cake_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+# Asosiy menyu tugmalarini shakllantirish
+def main_menu_keyboard():
+    keyboard = []
+    for key, cake in CAKES_MENU.items():
+        keyboard.append([InlineKeyboardButton(cake["name"], callback_data=f"cake_{key}")])
+    return InlineKeyboardMarkup(keyboard)
 
-@dp.message(CommandStart())
-async def cmd_start(message: types.Message):
-    await message.answer(
-        f"Assalomu alaykum, {message.from_user.first_name}! 👋\n\n"
-        "Shirinliklar va tortlar menyusiga xush kelibsiz. Qaysi tort haqida ma'lumot olmoqchisiz?",
-        reply_markup=get_menu_keyboard()
+# Ortga qaytish tugmasi
+def back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Ortga qaytish", callback_data="back_to_menu")]
+    ])
+
+# /start buyrug'i kelganda
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await update.message.reply_text(
+        f"Assalomu alaykum, {user.first_name}!\n\n"
+        "Shirinliklar botimizga xush kelibsiz. Quyidagi tortlardan birini tanlang:",
+        reply_markup=main_menu_keyboard()
     )
 
-@dp.callback_query(F.data.startswith("cake_"))
-async def show_cake_info(callback: CallbackQuery):
-    cake_id = callback.data.split("_")[1]
-    cake = CAKES_MENU.get(cake_id)
-    if cake:
-        text = (
-            f"<b>{cake['name']}</b>\n\n"
-            f"📝 <b>Tavsif:</b> {cake['description']}\n"
-            f"💰 <b>Narxi:</b> {cake['price']}"
+# Tugmalar bosilganda ishlaydigan funksiya
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    # Tort tanlanganda rasmi va ma'lumotlarini yuborish
+    if data.startswith("cake_"):
+        cake_key = data.replace("cake_", "")
+        if cake_key in CAKES_MENU:
+            cake = CAKES_MENU[cake_key]
+            caption_text = (
+                f"<b>{cake['name']}</b>\n\n"
+                f"📝 <b>Tavsif:</b> {cake['description']}\n"
+                f"💰 <b>Narxi:</b> {cake['price']}"
+            )
+            
+            # Eski xabarni o'chirib, rasmli yangi xabar yuborish
+            await query.message.delete()
+            await context.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=cake["photo"],
+                caption=caption_text,
+                parse_mode="HTML",
+                reply_markup=back_keyboard()
+            )
+
+    # Ortga menyuga qaytish bosilganda
+    elif data == "back_to_menu":
+        await query.message.delete()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="Quyidagi tortlardan birini tanlang:",
+            reply_markup=main_menu_keyboard()
         )
-        back_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Menyuga qaytish", callback_data="back_to_menu")]
-        ])
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_kb)
-    await callback.answer()
 
-@dp.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "Tortlar menyusi:",
-        reply_markup=get_menu_keyboard()
-    )
-    await callback.answer()
+def main():
+    logging.basicConfig(level=logging.INFO)
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-async def main():
-    print(f"Bot ishga tushdi... Admin ID: {ADMIN_ID}")
-    await dp.start_polling(bot)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    print("Bot ishga tushdi...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
